@@ -91,6 +91,16 @@ export default function ChatPlayground({ graphGetter, onClose }: Props) {
   const [pendingInterrupt, setPendingInterrupt] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Abort the in-flight preview stream when the playground unmounts so the
+  // SSE reader's closure doesn't keep this component's state setters alive.
+  const previewAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => {
+      previewAbortRef.current?.abort();
+      previewAbortRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -115,6 +125,8 @@ export default function ChatPlayground({ graphGetter, onClose }: Props) {
   }, []);
 
   const clearConversation = useCallback(() => {
+    previewAbortRef.current?.abort();
+    previewAbortRef.current = null;
     setMessages([]);
     setThreadId(null);
     setPendingInterrupt(false);
@@ -147,7 +159,19 @@ export default function ChatPlayground({ graphGetter, onClose }: Props) {
       thinking: pickVerb(),
     };
 
-    setMessages((prev) => [...prev, userMsg, placeholder]);
+    // Drop trace blobs from prior turns — they're the bulk of per-turn
+    // memory (full LLM IO + span trees) and only the latest turn's trace
+    // is useful for debugging. Without this, long playground sessions
+    // accumulate megabytes per turn until the renderer OOMs.
+    setMessages((prev) => [
+      ...prev.map((m) =>
+        m.execution_trace || m.mlflow_trace
+          ? { ...m, execution_trace: undefined, mlflow_trace: undefined }
+          : m
+      ),
+      userMsg,
+      placeholder,
+    ]);
     const userInput = input.trim();
     setInput("");
     setIsLoading(true);
@@ -199,6 +223,12 @@ export default function ChatPlayground({ graphGetter, onClose }: Props) {
       // to take a moment, and any pause >400ms after a delta will re-arm it.
       startThinking(THINKING_INITIAL_MS);
 
+      // Per-send abort controller; the cleanup ref is updated so unmount
+      // and clearConversation can both cancel an in-flight stream.
+      previewAbortRef.current?.abort();
+      const abortController = new AbortController();
+      previewAbortRef.current = abortController;
+
       await streamPreview(graph, messageInput, threadId, resumeValue, null, (event) => {
         if (event.type === "delta") {
           stopThinking();
@@ -234,9 +264,12 @@ export default function ChatPlayground({ graphGetter, onClose }: Props) {
           setPendingInterrupt(false);
           updatePlaceholder({ content: "", thinking: null, error: event.message });
         }
-      });
+      }, abortController.signal);
     } catch (err) {
       stopThinking();
+      // ``AbortError`` is expected when the playground closes mid-stream —
+      // the component is unmounting, no need to update state.
+      if (err instanceof DOMException && err.name === "AbortError") return;
       const message =
         err instanceof Error ? err.message : String(err);
       updatePlaceholder({

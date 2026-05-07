@@ -29,7 +29,10 @@ export async function validateGraph(graph: GraphDef) {
 
 /** Stream a graph preview as an SSE feed. The callback fires for every event
  *  (token deltas + the terminal ``done`` / ``interrupt`` / ``error``). The
- *  promise resolves when the stream closes. */
+ *  promise resolves when the stream closes. Pass an ``AbortSignal`` to cancel
+ *  the request and the reader (e.g. when the playground is closed mid-stream
+ *  — without this, the reader buffers data into a closure that retains the
+ *  unmounted component's state and slowly leaks memory). */
 export async function streamPreview(
   graph: GraphDef,
   inputMessage: string,
@@ -37,6 +40,7 @@ export async function streamPreview(
   resumeValue: string | null | undefined,
   pat: string | null | undefined,
   onEvent: (event: PreviewEvent) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const body: Record<string, unknown> = {
     graph,
@@ -50,6 +54,7 @@ export async function streamPreview(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) throw new Error(`Preview failed: ${res.status} ${res.statusText}`);
 
