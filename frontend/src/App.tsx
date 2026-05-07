@@ -11,6 +11,7 @@ import AIChatDropdown from "./components/AIChatDropdown";
 import SetupPage from "./components/SetupPage";
 import ModelsPage from "./components/ModelsPage";
 import { fetchNodeTypes, fetchModels, getSetupStatus } from "./api";
+import { startMemDebugLogger } from "./debug/memDebug";
 import type { NodeTypeMetadata, GraphDef, SetupStatusResponse, ModelInfo } from "./types";
 
 type AppView = "home" | "builder" | "models" | "setup";
@@ -54,6 +55,8 @@ export default function App() {
         }
       })
       .catch(console.error);
+    // Starts only when ``?debug=1`` is on the URL; otherwise a no-op.
+    startMemDebugLogger();
   }, []);
 
   const handleSaveJson = useCallback(() => {

@@ -3,6 +3,7 @@ import { ArrowUp } from "lucide-react";
 import SimpleMarkdown from "./SimpleMarkdown";
 import { sendAIChatMessage } from "../api";
 import type { GraphDef } from "../types";
+import { setDebugStat } from "../debug/memDebug";
 
 interface ChatMsg {
   id: string;
@@ -47,6 +48,20 @@ export default function AIChatDropdown({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Memory debug HUD: AI chat keeps a full GraphDef per assistant message,
+  // so its byte size can balloon quickly in long sessions. No-op unless
+  // ``?debug=1``.
+  useEffect(() => {
+    setDebugStat("ai.msgs", messages.length);
+    setDebugStat("ai.bytes", JSON.stringify(messages).length);
+  }, [messages]);
+  useEffect(() => {
+    return () => {
+      setDebugStat("ai.msgs", 0);
+      setDebugStat("ai.bytes", 0);
+    };
+  }, []);
 
   const handleSend = useCallback(async () => {
     const text = input.trim();

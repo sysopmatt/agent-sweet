@@ -3,6 +3,7 @@ import { ArrowUp, X, Trash2 } from "lucide-react";
 import { streamPreview, validateGraph } from "../api";
 import type { ChatMessage, GraphDef } from "../types";
 import SimpleMarkdown from "./SimpleMarkdown";
+import { setDebugStat } from "../debug/memDebug";
 
 interface Props {
   graphGetter: (() => GraphDef) | null;
@@ -104,6 +105,18 @@ export default function ChatPlayground({ graphGetter, onClose }: Props) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Memory debug HUD: track playground state size. No-op unless ``?debug=1``.
+  useEffect(() => {
+    setDebugStat("pg.msgs", messages.length);
+    setDebugStat("pg.bytes", JSON.stringify(messages).length);
+  }, [messages]);
+  useEffect(() => {
+    return () => {
+      setDebugStat("pg.msgs", 0);
+      setDebugStat("pg.bytes", 0);
+    };
+  }, []);
 
   const scrollOnToggle = useCallback((e: React.SyntheticEvent<HTMLDetailsElement>) => {
     const details = e.currentTarget;
